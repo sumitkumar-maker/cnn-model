@@ -31,12 +31,16 @@ class CNN(nn.Module):
         x = self.fc(x)
         return x
 
-# Load Model
+# -------------------------
+# ✅ Load Model
+# -------------------------
 model = CNN()
 model.load_state_dict(torch.load("mnist_model.pth", map_location="cpu"))
 model.eval()
 
-# MNIST Transform
+# -------------------------
+# ✅ MNIST Transform
+# -------------------------
 transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
     transforms.Resize((28, 28)),
@@ -44,21 +48,13 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-# --------------------------------
-# ✅ Streamlit UI
-# --------------------------------
-st.title("🧠 MNIST Digit Classifier (Upload + Canvas + Advanced Preprocessing)")
-st.write("Upload a digit OR draw it on the canvas.")
-
-option = st.radio("Choose Input Method:", ["Upload Image", "Draw on Canvas"])
-
 # ===========================================================
-# ✅ IMAGE PREPROCESSING FUNCTION
+# ✅ IMAGE PREPROCESSOR
 # ===========================================================
 def preprocess_image(img):
-    img = ImageOps.invert(img)                        # invert
+    img = ImageOps.invert(img)
     img_np = np.array(img)
-    binary = img_np < 200                             # threshold
+    binary = img_np < 200
 
     if not binary.any():
         return None
@@ -66,25 +62,34 @@ def preprocess_image(img):
     coords = np.column_stack(np.where(binary))
     y_min, x_min = coords.min(axis=0)
     y_max, x_max = coords.max(axis=0)
-    img = img.crop((x_min, y_min, x_max, y_max))      # crop digit
-    img = ImageOps.expand(img, border=20, fill=255)   # padding
-    img = img.resize((28, 28))                        # resize
+
+    img = img.crop((x_min, y_min, x_max, y_max))
+    img = ImageOps.expand(img, border=20, fill=255)
+    img = img.resize((28, 28))
+
     return img
 
 # ===========================================================
-# ✅ OPTION 1 — UPLOAD IMAGE
+# ✅ STREAMLIT UI
+# ===========================================================
+st.title("🧠 MNIST Digit Classifier (Upload + Canvas + Preprocessing)")
+
+option = st.radio("Choose Input Method:", ["Upload Image", "Draw on Canvas"])
+
+# ===========================================================
+# ✅ UPLOAD IMAGE
 # ===========================================================
 if option == "Upload Image":
-    uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
+    uploaded = st.file_uploader("Upload digit image", type=["png", "jpg", "jpeg"])
 
     if uploaded:
         original = Image.open(uploaded).convert("L")
-        st.image(original, caption="Original Uploaded Image", width=200)
+        st.image(original, caption="Original Image", width=200)
 
         processed = preprocess_image(original)
 
         if processed is None:
-            st.error("Digit not detected properly. Try a clearer photo.")
+            st.error("Digit not detected. Try a clearer photo.")
         else:
             st.image(processed, caption="Preprocessed Image", width=200)
             img_tensor = transform(processed).unsqueeze(0)
@@ -96,13 +101,34 @@ if option == "Upload Image":
             st.success(f"✅ Predicted Digit: {predicted.item()}")
 
 # ===========================================================
-# ✅ OPTION 2 — DRAW DIGIT ON CANVAS
+# ✅ DRAW ON CANVAS
 # ===========================================================
 if option == "Draw on Canvas":
-    st.write("Draw a digit (0–9) below:")
+    st.write("Draw a digit below:")
 
     canvas = st_canvas(
         fill_color="#00000000",
         stroke_width=12,
         stroke_color="black",
+        background_color="white",
+        width=280,
+        height=280,
+        drawing_mode="freedraw",
+        key="canvas",
+    )
 
+    if canvas.image_data is not None:
+        img = Image.fromarray(canvas.image_data.astype("uint8")).convert("L")
+        processed = preprocess_image(img)
+
+        if processed:
+            st.image(processed, caption="Processed Canvas Image", width=200)
+            img_tensor = transform(processed).unsqueeze(0)
+
+            with torch.no_grad():
+                output = model(img_tensor)
+                _, predicted = torch.max(output, 1)
+
+            st.success(f"✅ Predicted Digit: {predicted.item()}")
+        else:
+            st.info("Draw a digit clearly for prediction.")
