@@ -2,12 +2,12 @@ import streamlit as st
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-import torchvision.transforms.functional as TF
 from PIL import Image, ImageOps
 import numpy as np
+from streamlit_drawable_canvas import st_canvas
 
 # -------------------------
-# ✅ CNN Model Definition
+# ✅ CNN MODEL
 # -------------------------
 class CNN(nn.Module):
     def __init__(self):
@@ -31,16 +31,12 @@ class CNN(nn.Module):
         x = self.fc(x)
         return x
 
-# -------------------------
-# ✅ Load the trained model
-# -------------------------
+# Load Model
 model = CNN()
 model.load_state_dict(torch.load("mnist_model.pth", map_location="cpu"))
 model.eval()
 
-# -------------------------
-# ✅ MNIST Transform
-# -------------------------
+# MNIST Transform
 transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
     transforms.Resize((28, 28)),
@@ -48,67 +44,65 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-# -------------------------
+# --------------------------------
 # ✅ Streamlit UI
-# -------------------------
-st.title("🧠 MNIST Digit Classifier (Advanced Preprocessing)")
-st.write("Upload a handwritten digit image taken from your phone or scanned paper.")
+# --------------------------------
+st.title("🧠 MNIST Digit Classifier (Upload + Canvas + Advanced Preprocessing)")
+st.write("Upload a digit OR draw it on the canvas.")
 
-uploaded = st.file_uploader("Upload image", type=["png", "jpg", "jpeg"])
+option = st.radio("Choose Input Method:", ["Upload Image", "Draw on Canvas"])
 
-if uploaded:
-    # Load & show original
-    original_img = Image.open(uploaded).convert("L")
-    st.image(original_img, caption="Original Uploaded Image", width=200)
-
-    # -------------------------
-    # ✅ STEP 1: Invert Image (phone images are black on white)
-    # -------------------------
-    img = ImageOps.invert(original_img)
-
-    # -------------------------
-    # ✅ STEP 2: Convert to numpy & threshold to remove noise
-    # -------------------------
+# ===========================================================
+# ✅ IMAGE PREPROCESSING FUNCTION
+# ===========================================================
+def preprocess_image(img):
+    img = ImageOps.invert(img)                        # invert
     img_np = np.array(img)
-    binary = img_np < 200   # True where digit is
+    binary = img_np < 200                             # threshold
 
-    # If no digit detected
     if not binary.any():
-        st.error("Digit not detected. Try clearer photo.")
-    else:
-        # -------------------------
-        # ✅ STEP 3: Find bounding box around the digit
-        # -------------------------
-        coords = np.column_stack(np.where(binary))
-        y_min, x_min = coords.min(axis=0)
-        y_max, x_max = coords.max(axis=0)
+        return None
 
-        img_cropped = img.crop((x_min, y_min, x_max, y_max))
+    coords = np.column_stack(np.where(binary))
+    y_min, x_min = coords.min(axis=0)
+    y_max, x_max = coords.max(axis=0)
+    img = img.crop((x_min, y_min, x_max, y_max))      # crop digit
+    img = ImageOps.expand(img, border=20, fill=255)   # padding
+    img = img.resize((28, 28))                        # resize
+    return img
 
-        # -------------------------
-        # ✅ STEP 4: Add padding to center the digit
-        # -------------------------
-        img_padded = ImageOps.expand(img_cropped, border=20, fill=255)
+# ===========================================================
+# ✅ OPTION 1 — UPLOAD IMAGE
+# ===========================================================
+if option == "Upload Image":
+    uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
 
-        # -------------------------
-        # ✅ STEP 5: Resize to MNIST size
-        # -------------------------
-        img_resized = img_padded.resize((28, 28))
+    if uploaded:
+        original = Image.open(uploaded).convert("L")
+        st.image(original, caption="Original Uploaded Image", width=200)
 
-        st.image(img_resized, caption="Preprocessed Image", width=200)
+        processed = preprocess_image(original)
 
-        # -------------------------
-        # ✅ STEP 6: Convert to tensor
-        # -------------------------
-        img_tensor = transform(img_resized).unsqueeze(0)
+        if processed is None:
+            st.error("Digit not detected properly. Try a clearer photo.")
+        else:
+            st.image(processed, caption="Preprocessed Image", width=200)
+            img_tensor = transform(processed).unsqueeze(0)
 
-        # -------------------------
-        # ✅ STEP 7: Predict
-        # -------------------------
-        with torch.no_grad():
-            output = model(img_tensor)
-            _, predicted = torch.max(output, 1)
+            with torch.no_grad():
+                output = model(img_tensor)
+                _, predicted = torch.max(output, 1)
 
-        st.success(f"✅ Predicted Digit: {predicted.item()}")
+            st.success(f"✅ Predicted Digit: {predicted.item()}")
 
-    st.success(f"✅ Predicted Digit: {predicted.item()}")
+# ===========================================================
+# ✅ OPTION 2 — DRAW DIGIT ON CANVAS
+# ===========================================================
+if option == "Draw on Canvas":
+    st.write("Draw a digit (0–9) below:")
+
+    canvas = st_canvas(
+        fill_color="#00000000",
+        stroke_width=12,
+        stroke_color="black",
+
