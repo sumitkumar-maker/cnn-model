@@ -3,9 +3,12 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as TF
-from PIL import Image
+from PIL import Image, ImageOps
+import numpy as np
 
-# ✅ CNN model (same as training)
+# -------------------------
+# ✅ CNN Model Definition
+# -------------------------
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
@@ -28,36 +31,84 @@ class CNN(nn.Module):
         x = self.fc(x)
         return x
 
-# ✅ Load Model
+# -------------------------
+# ✅ Load the trained model
+# -------------------------
 model = CNN()
 model.load_state_dict(torch.load("mnist_model.pth", map_location="cpu"))
 model.eval()
 
-# ✅ Preprocessing
+# -------------------------
+# ✅ MNIST Transform
+# -------------------------
 transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
-    transforms.Resize((28,28)),
+    transforms.Resize((28, 28)),
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-st.title("🧠 MNIST Digit Classifier (CNN)")
-st.write("Upload a digit image (0–9)")
+# -------------------------
+# ✅ Streamlit UI
+# -------------------------
+st.title("🧠 MNIST Digit Classifier (Advanced Preprocessing)")
+st.write("Upload a handwritten digit image taken from your phone or scanned paper.")
 
-file = st.file_uploader("Upload image", type=["png","jpg","jpeg"])
+uploaded = st.file_uploader("Upload image", type=["png", "jpg", "jpeg"])
 
-if file:
-    img = Image.open(file).convert("L")
+if uploaded:
+    # Load & show original
+    original_img = Image.open(uploaded).convert("L")
+    st.image(original_img, caption="Original Uploaded Image", width=200)
 
-    # ✅ invert image (very important)
-    img = TF.invert(img)
+    # -------------------------
+    # ✅ STEP 1: Invert Image (phone images are black on white)
+    # -------------------------
+    img = ImageOps.invert(original_img)
 
-    st.image(img, caption="Uploaded Image", width=200)
+    # -------------------------
+    # ✅ STEP 2: Convert to numpy & threshold to remove noise
+    # -------------------------
+    img_np = np.array(img)
+    binary = img_np < 200   # True where digit is
 
-    img_tensor = transform(img).unsqueeze(0)
+    # If no digit detected
+    if not binary.any():
+        st.error("Digit not detected. Try clearer photo.")
+    else:
+        # -------------------------
+        # ✅ STEP 3: Find bounding box around the digit
+        # -------------------------
+        coords = np.column_stack(np.where(binary))
+        y_min, x_min = coords.min(axis=0)
+        y_max, x_max = coords.max(axis=0)
 
-    with torch.no_grad():
-        output = model(img_tensor)
-        _, predicted = torch.max(output, 1)
+        img_cropped = img.crop((x_min, y_min, x_max, y_max))
+
+        # -------------------------
+        # ✅ STEP 4: Add padding to center the digit
+        # -------------------------
+        img_padded = ImageOps.expand(img_cropped, border=20, fill=255)
+
+        # -------------------------
+        # ✅ STEP 5: Resize to MNIST size
+        # -------------------------
+        img_resized = img_padded.resize((28, 28))
+
+        st.image(img_resized, caption="Preprocessed Image", width=200)
+
+        # -------------------------
+        # ✅ STEP 6: Convert to tensor
+        # -------------------------
+        img_tensor = transform(img_resized).unsqueeze(0)
+
+        # -------------------------
+        # ✅ STEP 7: Predict
+        # -------------------------
+        with torch.no_grad():
+            output = model(img_tensor)
+            _, predicted = torch.max(output, 1)
+
+        st.success(f"✅ Predicted Digit: {predicted.item()}")
 
     st.success(f"✅ Predicted Digit: {predicted.item()}")
